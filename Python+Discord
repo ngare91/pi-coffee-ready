@@ -1,0 +1,69 @@
+#Python_Discord_Coffee.py
+
+import os
+import glob
+import time
+import discord
+import asyncio
+
+#Coffee variables
+brewingTemp = 85;
+brewedTemp = 92;
+brewOffset = 45* 60000;
+###Discord API Token
+token = "add your token here"
+
+#Temperature Gauge Reading Setup
+os.system('modprobe w1-gpio')
+os.system('modprobe w1-therm')
+#Points to where the temperature gauge logs its temperature readigns
+base_dir = '/sys/bus/w1/devices/' 
+device_folder = glob.glob(base_dir + '28-0315977913fe')[0]  #Change the 28-******* to your number
+device_file = device_folder + '/w1_slave'
+
+#Gets the temperature in an unreadable format
+def read_temp_raw():
+    f = open(device_file, 'r')
+    lines = f.readlines()
+    f.close()
+    return lines
+#Converts the temperature into a readable format and fahrenheit
+def read_temp():
+    lines = read_temp_raw()
+    while lines[0].strip()[-3:] != 'YES':
+        time.sleep(0.2)
+        lines = read_temp_raw()
+    equals_pos = lines[1].find('t=')
+    if equals_pos != -1:
+        temp_string = lines[1][equals_pos+2:]
+        temp_c = float(temp_string) / 1000.0
+        temp_f = temp_c * 9.0 / 5.0 + 32.0
+        return temp_f
+
+# Begins setuping up the Discord Bot
+
+client = discord.Client()
+
+#Checks to current temperature of coffee pot. Sends message if it exceeds brewedTemp.
+async def isCoffeeReady():
+    await client.wait_until_ready()
+    channel = discord.Object(id='*******') # insert your Discord Channel ID here
+    while not client.is_closed:
+        current_temp = int(read_temp())
+        if current_temp > brewedTemp:
+            await client.send_message(channel, "Human, your coffee is ready.")
+            print("Coffee Ready Message Sent")
+            await asyncio.sleep(1800) #Set to not check tempature again for 30 minutes.
+        if current_temp > brewingTemp:
+            print("Coffee message wasn't sent, but coffee is almost ready.")
+			await asyncio.sleep(30) #Set to not check tempature again for a 30 seconds.
+        elif current_temp < brewingTemp:
+            print("Coffee message wasn't sent, machine isn't brewing.")
+            await asyncio.sleep(60) #Set to not check tempature again for a minute. 
+@client.event                            
+async def on_ready():
+    print("The bot is ready!")
+    await client.change_presence(game=discord.Game(name="Running on a PI"))                             
+    
+client.loop.create_task(isCoffeeReady())   
+client.run(token)
